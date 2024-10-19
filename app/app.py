@@ -6,6 +6,8 @@ from groq import Groq
 import PyPDF2
 from pptx import Presentation
 import io
+import boto3
+from botocore.exceptions import ClientError
 from PIL import Image
 import tempfile
 import base64
@@ -28,6 +30,11 @@ handler = Mangum(app)
 client = Groq(
     api_key="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",
 )
+
+
+bedrock_client = boto3.client("bedrock-runtime", region_name="us-west-2")
+model_id = "meta.llama3-1-70b-instruct-v1:0"
+
 
 @app.get("/")
 async def root():
