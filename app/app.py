@@ -15,6 +15,9 @@ import json
 import requests
 from pydantic import BaseModel
 import httpx
+import uuid
+import datetime
+import pytz
 
 app = FastAPI()
 
@@ -226,7 +229,7 @@ async def create_task(task: Task):
                 "apikey": SUPABASE_API_KEY,
             },
         )
-
+    create_eventbridge_schedule(data)
     # Check if the request was successful
     if response.status_code == 201:
         return {"message": "Task created successfully", "data": data}
@@ -252,8 +255,62 @@ async def get_tasks(email: str):
     else:
         raise HTTPException(status_code=response.status_code, detail=response.json())
 
+def create_eventbridge_schedule(task):
+    # Initialize the Boto3 clients for EventBridge and Lambda
+    lambda_client = boto3.client(
+        'lambda',
+        aws_access_key_id='AKIAR76O52QWHA2RBJ7U',
+        aws_secret_access_key='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',
+        region_name='us-west-2')
+    eventbridge_client = boto3.client(
+        'scheduler',
+        aws_access_key_id='AKIAR76O52QWHA2RBJ7U',
+        aws_secret_access_key='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',
+        region_name='us-west-2')
 
+    # Generate a unique ID for the rule
+    schedule_id = str(uuid.uuid4())
+    schedule_name = f"schedule-{schedule_id}"
+    lambda_function_arn = "arn:aws:lambda:us-west-2:137336050732:function:meta-scheduler-lambda"
 
+    eventbridge_client.create_schedule(
+        Name=schedule_name,
+        ScheduleExpression=f"cron({convert_epoch_to_cron(task['epoch_time'])})",
+        Target={
+            'Arn': lambda_function_arn,
+            'Input': json.dumps(task),
+            'RoleArn': 'arn:aws:iam::137336050732:role/service-role/meta-scheduler-lambda-role-omq2exfb'
+        },
+        State='ENABLED',
+        Description='My scheduled event',
+        FlexibleTimeWindow={
+        'Mode': 'OFF',  # Set Mode to 'OFF' if you don't want flexible time windows
+        # 'MaximumWindowInMinutes': 300  # Use this if flexible time window is required
+        },
+        StartDate=datetime.datetime.now(
+            pytz.timezone("Asia/Kolkata")),  # Start date of the schedule (optional, default is the current date and time)
+        EndDate=datetime.datetime.now(
+            pytz.timezone("Asia/Kolkata")) + datetime.timedelta(days=1)  # End date of the schedule (optional, default is 1 day from the current date and time)
+            
+    )
+
+    print(f"Created schedule with ID: {schedule_id}")
+
+def convert_epoch_to_cron(epoch_time):
+    # Convert epoch time to a datetime object
+    dt = datetime.datetime.fromtimestamp(epoch_time, tz=pytz.timezone("Asia/Kolkata"))
+    
+    # Ensure the cron expression is for a future time
+    current_time = datetime.datetime.now(pytz.timezone("Asia/Kolkata"))
+    
+    # If the task time is in the past, adjust it to a future time (e.g., 5 minutes from now)
+    if dt <= current_time:
+        dt = current_time + datetime.timedelta(minutes=5)
+    
+    # Create the cron expression (minute hour day-of-month month day-of-week year)
+    cron_expression = f"{dt.minute} {dt.hour} {dt.day} {dt.month} ? {dt.year}"
+    
+    return cron_expression
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
