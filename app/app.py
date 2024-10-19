@@ -18,6 +18,13 @@ import httpx
 import uuid
 import datetime
 import pytz
+# from typing import List, Dict, Any
+# from qdrant_client import QdrantClient
+# from qdrant_client.http import models
+# import httpx
+# from sentence_transformers import SentenceTransformer
+# import nltk
+# from nltk.tokenize import sent_tokenize
 
 app = FastAPI()
 
@@ -31,6 +38,7 @@ class Task(BaseModel):
 aws_access_key_id = "AKIAQ3EGUNCQ5QJVNYMJ"
 aws_secret_access_key = "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"
 aws_region = "us-west-2"
+
 TUNE_AI_API_URL = "https://proxy.tune.app/chat/completions"
 TUNE_AI_API_KEY = "sk-tune-IeArLOH0xZIE5cTHuNzrVGQlATFTMNDZqzh"  # Replace with your actual API key
 
@@ -45,6 +53,22 @@ bedrock_client = boto3.client(
 groq_client = Groq(
     api_key="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",
 )
+# Download NLTK data
+# nltk.download('punkt')
+
+
+
+# # Initialize Qdrant client with cloud configuration
+# QDRANT_URL = "https://13f743e4-bf99-4752-a59a-fb717c1b8d52.us-east4-0.gcp.cloud.qdrant.io:6333"
+# QDRANT_API_KEY = os.environ.get("QDRANT_API_KEY", "<your-token>")  # Replace with your actual Qdrant API key
+
+# qdrant_client = QdrantClient(
+#     url=QDRANT_URL,
+#     api_key=QDRANT_API_KEY,
+# )
+
+# # Initialize sentence transformer model
+# model = SentenceTransformer('all-MiniLM-L6-v2')
 
 @app.get("/")
 async def root():
@@ -155,6 +179,108 @@ async def perform_ocr(file: UploadFile = File(...)):
     ocr_result = result['choices'][0]['message']['content']
 
     return {"ocr_result": ocr_result}
+
+# Initialize sentence transformer model
+# model = SentenceTransformer('all-MiniLM-L6-v2')
+
+# # Define the collection name
+# COLLECTION_NAME = "document_collection"
+
+# # Define request models
+# class SearchQuery(BaseModel):
+#     query: str
+
+# # Function to create the collection
+# def create_collection():
+#     qdrant_client.recreate_collection(
+#         collection_name=COLLECTION_NAME,
+#         vectors_config=models.VectorParams(
+#             size=model.get_sentence_embedding_dimension(),
+#             distance=models.Distance.COSINE,
+#         ),
+#     )
+
+# # Function to chunk text
+# def chunk_text(text: str, chunk_size: int = 5):
+#     sentences = sent_tokenize(text)
+#     chunks = []
+#     current_chunk = []
+#     current_length = 0
+    
+#     for sentence in sentences:
+#         current_chunk.append(sentence)
+#         current_length += 1
+#         if current_length >= chunk_size:
+#             chunks.append(" ".join(current_chunk))
+#             current_chunk = []
+#             current_length = 0
+    
+#     if current_chunk:
+#         chunks.append(" ".join(current_chunk))
+    
+#     return chunks
+
+# # Function to process and insert document
+# def process_and_insert_document(file_content: str, file_name: str):
+#     chunks = chunk_text(file_content)
+#     embeddings = model.encode(chunks)
+    
+#     points = []
+#     for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
+#         points.append(
+#             models.PointStruct(
+#                 id=f"{file_name}_{i}",
+#                 vector=embedding.tolist(),
+#                 payload={
+#                     "text": chunk,
+#                     "file_name": file_name,
+#                     "chunk_index": i
+#                 }
+#             )
+#         )
+    
+#     qdrant_client.upsert(
+#         collection_name=COLLECTION_NAME,
+#         points=points
+#     )
+
+# # Initialize the collection on startup
+# @app.on_event("startup")
+# async def startup_event():
+#     # Check if the collection exists, create it if it doesn't
+#     collections = qdrant_client.get_collections()
+#     if COLLECTION_NAME not in [collection.name for collection in collections.collections]:
+#         create_collection()
+#     print(f"Connected to Qdrant. Available collections: {qdrant_client.get_collections().collections}")
+
+# @app.post("/upload")
+# async def upload_file(file: UploadFile = File(...), api_key: APIKey = Depends(get_api_key)):
+#     content = await file.read()
+#     file_content = content.decode("utf-8")
+#     process_and_insert_document(file_content, file.filename)
+#     return {"message": f"File {file.filename} uploaded and processed successfully"}
+
+# @app.post("/docsearch")
+# async def docsearch(query: SearchQuery, api_key: APIKey = Depends(get_api_key)):
+#     try:
+#         query_vector = model.encode([query.query])[0]
+#         search_result = qdrant_client.search(
+#             collection_name=COLLECTION_NAME,
+#             query_vector=query_vector.tolist(),
+#             limit=5
+#         )
+        
+#         return [
+#             {
+#                 "id": result.id,
+#                 "score": result.score,
+#                 "text": result.payload["text"],
+#                 "file_name": result.payload["file_name"],
+#                 "chunk_index": result.payload["chunk_index"]
+#             } for result in search_result
+#         ]
+#     except Exception as e:
+#         raise HTTPException(status_code=500, detail=str(e))
 
 def extract_text_from_pdf(content):
     pdf_reader = PyPDF2.PdfReader(io.BytesIO(content))
