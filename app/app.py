@@ -21,8 +21,6 @@ client = Groq(
 )
 
 
-bedrock_client = boto3.client("bedrock-runtime", region_name="us-west-2")
-model_id = "meta.llama3-1-70b-instruct-v1:0"
 
 
 @app.get("/")
