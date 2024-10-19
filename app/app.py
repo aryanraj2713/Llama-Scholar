@@ -1,8 +1,7 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File
 from fastapi.responses import JSONResponse
 import uvicorn
 import os
-from groq import Groq
 import PyPDF2
 from pptx import Presentation
 import io
@@ -11,28 +10,28 @@ from botocore.exceptions import ClientError
 from PIL import Image
 import tempfile
 import base64
-from pydantic import BaseModel
-import httpx
-from mangum import Mangum
-
-class Task(BaseModel):
-    epoch_time: int
-    name: str
-    email: str
-    task_name: str
-
-SUPABASE_URL = "https://jpoqergdaandvpxyirtq.supabase.co"
-SUPABASE_API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impwb3FlcmdkYWFuZHZweHlpcnRxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MjkzMTc0NjIsImV4cCI6MjA0NDg5MzQ2Mn0.OZTinuAeJObdhIv9AfzMXWZcs0aofaUAn611HpEKWfs"
+from groq import Groq
+import json
 
 app = FastAPI()
-handler = Mangum(app)
-# Initialize Groq client
-client = Groq(
-    api_key="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",
+
+
+# AWS Bedrock configuration
+aws_access_key_id = "AKIAQ3EGUNCQ5QJVNYMJ"
+aws_secret_access_key = "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"
+aws_region = "us-west-2"
+
+bedrock_client = boto3.client(
+    service_name="bedrock-runtime",
+    region_name=aws_region,
+    aws_access_key_id=aws_access_key_id,
+    aws_secret_access_key=aws_secret_access_key
 )
 
-
-
+# Groq configuration
+groq_client = Groq(
+    api_key="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",
+)
 
 @app.get("/")
 async def root():
@@ -83,7 +82,7 @@ async def transcribe_voice_notes(file: UploadFile = File(...)):
 
     try:
         with open(temp_file_path, "rb") as audio_file:
-            transcription = client.audio.transcriptions.create(
+            transcription = groq_client.audio.transcriptions.create(
                 file=(file.filename, audio_file),
                 model="whisper-large-v3",
                 response_format="verbose_json",
@@ -93,8 +92,6 @@ async def transcribe_voice_notes(file: UploadFile = File(...)):
     finally:
         # Clean up the temporary file
         os.unlink(temp_file_path)
-def encode_image(image_file):
-    return base64.b64encode(image_file.read()).decode('utf-8')
 
 @app.post("/ocr/")
 async def perform_ocr(file: UploadFile = File(...)):
@@ -122,10 +119,10 @@ async def perform_ocr(file: UploadFile = File(...)):
     ]
 
     # Make the API call to Groq
-    completion = client.chat.completions.create(
+    completion = groq_client.chat.completions.create(
         model="llama-3.2-11b-vision-preview",
         messages=messages,
-        temperature=0,  # Set to 0 for more deterministic results
+        temperature=0,
         max_tokens=1024,
         top_p=1,
         stream=False,
@@ -156,86 +153,32 @@ def extract_text_from_pptx(content):
 def summarize_text(text):
     prompt = f"Summarize the following text:\n\n{text[:4000]}..."  # Truncate to 4000 characters to fit within token limit
     
-    chat_completion = client.chat.completions.create(
-        messages=[
-            {
-                "role": "user",
-                "content": prompt,
-            }
-        ],
-        model="llama3-8b-8192",
+    response = bedrock_client.invoke_model(
+        modelId="meta.llama3-1-70b-instruct-v1:0",
+        body=json.dumps({
+            "prompt": prompt
+        })
     )
     
-    return chat_completion.choices[0].message.content
+    response_body = json.loads(response['body'].read())
+    return response_body['generation']
+
 def generate_important_questions(text):
     prompt = f"Generate 5 important questions based on the following text:\n\n{text[:4000]}..."  # Truncate to 4000 characters to fit within token limit
     
-    chat_completion = client.chat.completions.create(
-        messages=[
-            {
-                "role": "user",
-                "content": prompt,
-            }
-        ],
-        model="llama3-8b-8192",
+    response = bedrock_client.invoke_model(
+        modelId="meta.llama3-1-70b-instruct-v1:0",
+        body=json.dumps({
+            "prompt": prompt
+        })
     )
     
-    return chat_completion.choices[0].message.content
+    response_body = json.loads(response['body'].read())
+    return response_body['generation']
 
-'''
-    task service for storing task and sending out as reminders
-'''
-SUPABASE_URL = "https://jpoqergdaandvpxyirtq.supabase.co"
-SUPABASE_API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impwb3FlcmdkYWFuZHZweHlpcnRxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MjkzMTc0NjIsImV4cCI6MjA0NDg5MzQ2Mn0.OZTinuAeJObdhIv9AfzMXWZcs0aofaUAn611HpEKWfs"
 
-@app.post("/tasks")
-async def create_task(task: Task):
-    # Prepare the data to send to Supabase
-    data = {
-        "epoch_time": task.epoch_time,
-        "name": task.name,
-        "email": task.email,
-        "task_name": task.task_name,
-    }
-
-    # Send a request to Supabase
-    async with httpx.AsyncClient() as client:
-        response = await client.post(
-            f"{SUPABASE_URL}/rest/v1/tasks",
-            json=data,
-            headers={
-                "Authorization": f"Bearer {SUPABASE_API_KEY}",
-                "Content-Type": "application/json",
-                "apikey": SUPABASE_API_KEY,
-            },
-        )
-
-    # Check if the request was successful
-    if response.status_code == 201:
-        return {"message": "Task created successfully", "data": data}
-    else:
-        raise HTTPException(status_code=response.status_code, detail=response.json())
-    
-@app.get("/tasks/{email}")
-async def get_tasks(email: str):
-    # Send a request to Supabase
-    async with httpx.AsyncClient() as client:
-        response = await client.get(
-            f"{SUPABASE_URL}/rest/v1/tasks?select=*&email=eq.{email}",
-            headers={
-                "Authorization": f"Bearer {SUPABASE_API_KEY}",
-                "Content-Type": "application/json",
-                "apikey": SUPABASE_API_KEY,
-            },
-        )
-
-    # Check if the request was successful
-    if response.status_code == 200:
-        return response.json()
-    else:
-        raise HTTPException(status_code=response.status_code, detail=response.json())
-    
-
+def encode_image(image_file):
+    return base64.b64encode(image_file.read()).decode('utf-8')
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
