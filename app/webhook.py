@@ -22,8 +22,12 @@ from qdrant_client.http import models
 import uuid
 import logging
 
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
+
+logging.basicConfig(level=logging.INFO,
+                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                    handlers=[logging.StreamHandler()])
+
+logger = logging.getLogger("app")
 
 app = FastAPI()
 manish = MaNish('EAAPZCdgo11ucBOxmxq3h4XlhzL7IituEG4L5yXnQbMiD0LtyakeLD0bZB0ZBdczo18hIJhW6ZAQ8aPRkw127wlXnD7Cks7IWO3KELZBHfa1jIwGZAiX9dL6ftEk4Oxng3gVdZCRgG8QlGtsEH0Hcf4j62ZAKOLZALdcuZCZC4HIp1ZBhFi65hzr2ACuGnAqCGZAS0abrfQP7KHydrvKMSwAPHfZBqnXUtZBZAHcZD',  phone_number_id='436207996245933')
@@ -80,37 +84,52 @@ async def webhook(request: Request):
                 message_id = message_response[intractive_type]["id"]
                 message_text = message_response[intractive_type]["title"]
                 logger.info(f"Interactive Message; {message_id}: {message_text}")
+                manish.send_message(message_text, mobile)
             elif message_type == "location":
                 message_location = manish.get_location(data)
                 message_latitude = message_location["latitude"]
                 message_longitude = message_location["longitude"]
                 logger.info("Location: %s, %s", message_latitude, message_longitude)
+                manish.send_message(f"Latitude: {message_latitude}, Longitude: {message_longitude}", mobile)
             elif message_type == "image":
                 image = manish.get_image(data)
                 image_id, mime_type = image["id"], image["mime_type"]
                 image_url = manish.query_media_url(image_id)
                 image_filename = manish.download_media(image_url, mime_type)
                 logger.info(f"{mobile} sent image {image_filename}")
+                manish.send_message(f"Image: {image_filename}", mobile)
             elif message_type == "video":
                 video = manish.get_video(data)
                 video_id, mime_type = video["id"], video["mime_type"]
                 video_url = manish.query_media_url(video_id)
                 video_filename = manish.download_media(video_url, mime_type)
                 logger.info(f"{mobile} sent video {video_filename}")
+                manish.send_message(f"Video: {video_filename}", mobile)
             elif message_type == "audio":
                 audio = manish.get_audio(data)
                 audio_id, mime_type = audio["id"], audio["mime_type"]
                 audio_url = manish.query_media_url(audio_id)
                 audio_filename = manish.download_media(audio_url, mime_type)
                 logger.info(f"{mobile} sent audio {audio_filename}")
+                manish.send_message(f"Audio: {audio_filename}", mobile)
             elif message_type == "file":
                 file = manish.get_file(data)
+                logger.info(file)
                 file_id, mime_type = file["id"], file["mime_type"]
                 file_url = manish.query_media_url(file_id)
                 file_filename = manish.download_media(file_url, mime_type)
                 logger.info(f"{mobile} sent file {file_filename}")
+                manish.send_message(f"File: {file_filename}", mobile)
+            elif message_type == "document":
+                document = manish.get_document(data)
+                document_id, mime_type = document["id"], document["mime_type"]
+                document_url = manish.query_media_url(document_id)
+                document_filename = manish.download_media(document_url, mime_type)
+                logger.info(f"{mobile} sent document {document_filename}")
+                manish.send_message(f"Document: {document_filename}", mobile)
             else:
                 logger.info(f"{mobile} sent {message_type} ")
+                manish.send_message(f"Sorry , I don't know how to handle {message_type}", mobile)
                 logger.info(data)
         else:
             delivery = manish.get_delivery(data)
@@ -133,4 +152,4 @@ async def verify(request: Request):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")
