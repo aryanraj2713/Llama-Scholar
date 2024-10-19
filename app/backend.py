@@ -20,6 +20,8 @@ from qdrant_client import QdrantClient
 from qdrant_client.http import models
 import uuid
 from logging import Logger
+import request
+import jsonify
 
 logger = Logger(name="app", level="INFO")
 app = FastAPI()
@@ -354,6 +356,19 @@ def generate_important_questions(text):
     
     response_body = json.loads(response['body'].read())
     return response_body['generation']
+
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    data = request.get_json()
+    print(data)  # Log the incoming data for debugging
+
+    # Handle the incoming message or event
+    if 'messages' in data:
+        for message in data['messages']:
+            # Process the message
+            print(f"Received message: {message}")
+
+    return jsonify({"status": "success"}), 200
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
