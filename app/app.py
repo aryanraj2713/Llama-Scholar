@@ -12,6 +12,7 @@ import tempfile
 import base64
 from groq import Groq
 import json
+import requests
 
 app = FastAPI()
 
@@ -20,6 +21,8 @@ app = FastAPI()
 aws_access_key_id = "AKIAQ3EGUNCQ5QJVNYMJ"
 aws_secret_access_key = "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"
 aws_region = "us-west-2"
+TUNE_AI_API_URL = "https://proxy.tune.app/chat/completions"
+TUNE_AI_API_KEY = "sk-tune-IeArLOH0xZIE5cTHuNzrVGQlATFTMNDZqzh"  # Replace with your actual API key
 
 bedrock_client = boto3.client(
     service_name="bedrock-runtime",
@@ -99,7 +102,7 @@ async def perform_ocr(file: UploadFile = File(...)):
     contents = await file.read()
     base64_image = encode_image(io.BytesIO(contents))
 
-    # Prepare the message for Groq
+    # Prepare the message for Tune AI
     messages = [
         {
             "role": "user",
@@ -118,19 +121,28 @@ async def perform_ocr(file: UploadFile = File(...)):
         }
     ]
 
-    # Make the API call to Groq
-    completion = groq_client.chat.completions.create(
-        model="llama-3.2-11b-vision-preview",
-        messages=messages,
-        temperature=0,
-        max_tokens=1024,
-        top_p=1,
-        stream=False,
-        stop=None,
-    )
+    # Prepare the request payload
+    payload = {
+        "temperature": 0.8,
+        "messages": messages,
+        "model": "meta/llama-3.2-90b-vision",
+        "stream": False,
+        "frequency_penalty": 0,
+        "max_tokens": 900
+    }
+
+    # Make the API call to Tune AI
+    headers = {
+        "Authorization": f"Bearer {TUNE_AI_API_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    response = requests.post(TUNE_AI_API_URL, headers=headers, json=payload)
+    response.raise_for_status()
+    result = response.json()
 
     # Extract the OCR result from the response
-    ocr_result = completion.choices[0].message.content
+    ocr_result = result['choices'][0]['message']['content']
 
     return {"ocr_result": ocr_result}
 
