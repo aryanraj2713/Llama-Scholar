@@ -1,29 +1,29 @@
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
 from typing import Optional
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 import uvicorn
-import os
+
 import PyPDF2
 from pptx import Presentation
 import io
 import boto3
 from botocore.exceptions import ClientError
-from PIL import Image
-import tempfile
-import base64
-from groq import Groq
+
 import json
-import requests
+
 from pydantic import BaseModel
 import httpx
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
 import uuid
-from logging import Logger
-import request
-import jsonify
+import logging
 
-logger = Logger(name="app", level="INFO")
+
+logging.basicConfig(level=logging.INFO,
+                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                    handlers=[logging.StreamHandler()])
+
+logger = logging.getLogger("app")
 app = FastAPI()
 
 
@@ -251,8 +251,58 @@ async def generate_questions(file: UploadFile = File(...)):
     
     questions = generate_important_questions(text)
     return {"questions": questions}
+@app.get("/webhook")
+async def webhook(request: Request):
+    # Handle the webhook verification
+    mode = request.query_params.get('hub.mode')
+    token = request.query_params.get('hub.verify_token')
+    challenge = request.query_params.get('hub.challenge')
+
+    if mode and token:
+        if mode == 'subscribe' and token == 'meatyhamhock':
+            print('WEBHOOK_VERIFIED')
+            return PlainTextResponse(content=challenge)
+        else:
+            raise HTTPException(status_code=403, detail="Verification failed")
+    
+    return PlainTextResponse(content="OK")
 
 
+@app.post("/webhook")
+async def postWebhook(request: Request):
+    
+    data = await request.json() 
+    logger.info(data)
+
+    if(data['entry'][0]['changes'][0]['value']['statuses'] is not None):
+        return "OK"
+
+
+    url = "https://graph.facebook.com/v20.0/436207996245933/messages"
+    headers = {
+        "Authorization": "Bearer EAAPZCdgo11ucBOxmxq3h4XlhzL7IituEG4L5yXnQbMiD0LtyakeLD0bZB0ZBdczo18hIJhW6ZAQ8aPRkw127wlXnD7Cks7IWO3KELZBHfa1jIwGZAiX9dL6ftEk4Oxng3gVdZCRgG8QlGtsEH0Hcf4j62ZAKOLZALdcuZCZC4HIp1ZBhFi65hzr2ACuGnAqCGZAS0abrfQP7KHydrvKMSwAPHfZBqnXUtZBZAHcZD",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": "919554469077",
+        "type": "template",
+        "template": {
+            "name": "hello_world",
+            "language": {
+                "code": "en_US"
+            }
+        }
+    }
+
+    async with httpx.AsyncClient() as client:
+        response = await client.post(url, headers=headers, json=payload)
+
+
+    if response.status_code == 200:
+        return {"message": "WhatsApp message sent successfully"}
+    else:
+        raise HTTPException(status_code=response.status_code, detail="Failed to send WhatsApp message")
 
 
 
@@ -357,18 +407,7 @@ def generate_important_questions(text):
     response_body = json.loads(response['body'].read())
     return response_body['generation']
 
-@app.route('/webhook', methods=['POST'])
-def webhook():
-    data = request.get_json()
-    print(data)  # Log the incoming data for debugging
 
-    # Handle the incoming message or event
-    if 'messages' in data:
-        for message in data['messages']:
-            # Process the message
-            print(f"Received message: {message}")
-
-    return jsonify({"status": "success"}), 200
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info", log_config=None)
