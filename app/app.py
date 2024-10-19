@@ -14,6 +14,7 @@ import base64
 from pydantic import BaseModel
 import httpx
 from mangum import Mangum
+import uuid
 
 class Task(BaseModel):
     epoch_time: int
@@ -210,6 +211,8 @@ async def create_task(task: Task):
             },
         )
 
+    create_eventbridge_schedule(data)
+
     # Check if the request was successful
     if response.status_code == 201:
         return {"message": "Task created successfully", "data": data}
@@ -235,6 +238,42 @@ async def get_tasks(email: str):
     else:
         raise HTTPException(status_code=response.status_code, detail=response.json())
     
+def create_eventbridge_schedule(task):
+    # Initialize the Boto3 clients for EventBridge and Lambda
+    eventbridge_client = boto3.client('events')
+    lambda_client = boto3.client('lambda')
+    
+    # Generate a unique ID for the rule
+    rule_id = str(uuid.uuid4())
+    rule_name = f"{task['task_name']}-{rule_id}"
+    lambda_function_arn = "arn:aws:lambda:us-west-2:137336050732:function:meta-scheduler-lambda"
+
+    # Convert epoch time to a cron expression
+    cron_expression = convert_epoch_to_cron(task['epoch_time'])
+    
+    # Create an EventBridge rule
+    eventbridge_client.put_rule(
+        Name=rule_name,
+        ScheduleExpression=f"cron({cron_expression})",
+        State='ENABLED'
+    )
+    
+    # Generate a unique ID for the target
+    target_id = str(uuid.uuid4())
+
+    # Add the Lambda function as a target for the rule
+    eventbridge_client.put_targets(
+        Rule=rule_name,
+        Targets=[
+            {
+                'Id': target_id,  # Unique ID for the target
+                'Arn': lambda_function_arn,
+                'Input': json.dumps(task)
+            }
+        ]
+    )
+    
+    print(f"Scheduled rule '{rule_name}' created with target ID '{target_id}'.")
 
 
 if __name__ == "__main__":
