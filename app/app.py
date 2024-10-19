@@ -153,7 +153,7 @@ def extract_text_from_pptx(content):
                 text += shape.text + "\n"
     return text
 
-lass ChatMessage(BaseModel):
+class ChatMessage(BaseModel):
     message: str
 
 @app.post("/chat")
@@ -175,7 +175,7 @@ async def chat(chat_message: ChatMessage):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-        
+
 def summarize_text(text):
     prompt = f"Summarize the following text:\n\n{text[:4000]}..."  # Truncate to 4000 characters to fit within token limit
     
