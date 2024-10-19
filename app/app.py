@@ -13,7 +13,7 @@ import tempfile
 import base64
 from pydantic import BaseModel
 import httpx
-from mangum import Mangum
+
 
 class Task(BaseModel):
     epoch_time: int
@@ -25,7 +25,7 @@ SUPABASE_URL = "https://jpoqergdaandvpxyirtq.supabase.co"
 SUPABASE_API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impwb3FlcmdkYWFuZHZweHlpcnRxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MjkzMTc0NjIsImV4cCI6MjA0NDg5MzQ2Mn0.OZTinuAeJObdhIv9AfzMXWZcs0aofaUAn611HpEKWfs"
 
 app = FastAPI()
-handler = Mangum(app)
+
 # Initialize Groq client
 client = Groq(
     api_key="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",
@@ -153,6 +153,29 @@ def extract_text_from_pptx(content):
                 text += shape.text + "\n"
     return text
 
+lass ChatMessage(BaseModel):
+    message: str
+
+@app.post("/chat")
+async def chat(chat_message: ChatMessage):
+    try:
+        prompt = f"Human: {chat_message.message}\n\nAssistant:"
+        
+        response = bedrock_client.invoke_model(
+            modelId="meta.llama3-1-70b-instruct-v1:0",
+            body=json.dumps({
+                "prompt": prompt
+            })
+        )
+        
+        response_body = json.loads(response['body'].read())
+        assistant_response = response_body['generation'].strip()
+        
+        return {"response": assistant_response}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+        
 def summarize_text(text):
     prompt = f"Summarize the following text:\n\n{text[:4000]}..."  # Truncate to 4000 characters to fit within token limit
     
