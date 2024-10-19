@@ -185,6 +185,9 @@ def generate_important_questions(text):
 '''
     task service for storing task and sending out as reminders
 '''
+SUPABASE_URL = "https://jpoqergdaandvpxyirtq.supabase.co"
+SUPABASE_API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impwb3FlcmdkYWFuZHZweHlpcnRxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MjkzMTc0NjIsImV4cCI6MjA0NDg5MzQ2Mn0.OZTinuAeJObdhIv9AfzMXWZcs0aofaUAn611HpEKWfs"
+
 @app.post("/tasks")
 async def create_task(task: Task):
     # Prepare the data to send to Supabase
@@ -203,6 +206,7 @@ async def create_task(task: Task):
             headers={
                 "Authorization": f"Bearer {SUPABASE_API_KEY}",
                 "Content-Type": "application/json",
+                "apikey": SUPABASE_API_KEY,
             },
         )
 
@@ -211,6 +215,27 @@ async def create_task(task: Task):
         return {"message": "Task created successfully", "data": data}
     else:
         raise HTTPException(status_code=response.status_code, detail=response.json())
+    
+@app.get("/tasks/{email}")
+async def get_tasks(email: str):
+    # Send a request to Supabase
+    async with httpx.AsyncClient() as client:
+        response = await client.get(
+            f"{SUPABASE_URL}/rest/v1/tasks?select=*&email=eq.{email}",
+            headers={
+                "Authorization": f"Bearer {SUPABASE_API_KEY}",
+                "Content-Type": "application/json",
+                "apikey": SUPABASE_API_KEY,
+            },
+        )
+
+    # Check if the request was successful
+    if response.status_code == 200:
+        return response.json()
+    else:
+        raise HTTPException(status_code=response.status_code, detail=response.json())
+    
+
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
