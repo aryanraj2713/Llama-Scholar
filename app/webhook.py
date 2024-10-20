@@ -253,7 +253,7 @@ async def webhook(request: Request):
                     messages = [
                         {
                             "role": "system",
-                            "content": f"Context: {context}\nPlease provide a concise and accurate answer to the question based on the given context. If the context doesn't contain relevant information to answer the question, please state that you don't have enough information to provide an accurate answer. If the user greets , greet them back with a greeting and a pun about LaaMA Scholar whatsapp bot."
+                            "content": f"Context: {context}\nPlease provide a concise and accurate answer to the question based on the given context. If the context doesn't contain relevant information to answer the question, please state that you don't have enough information to provide an accurate answer. If the user greets , greet them back with a greeting and a pun about LaaMA Scholar whatsapp bot, also during greeting do not use any other context.."
                         },
                         {
                             "role": "user",
