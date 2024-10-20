@@ -60,6 +60,67 @@ bedrock_client = boto3.client(
     aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY')
 )
 
+# Initialize S3 client
+s3_client = boto3.client(
+    's3',
+    region_name=os.getenv('AWS_REGION'),
+    aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
+    aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY')
+)
+
+def process_audio_message(data, mobile, manish):
+    try:
+        audio = manish.get_audio(data)
+        audio_id, mime_type = audio["id"], audio["mime_type"]
+        audio_url = manish.query_media_url(audio_id)
+        audio_filename = manish.download_media(audio_url, mime_type)
+        
+        # Upload the audio file to S3
+        s3_audio_url = upload_file_to_s3(audio_filename, 'meta-llama-bucket', object_name=f"audio_{audio_id}")
+        
+        if s3_audio_url:
+            logger.info(f"{mobile} sent audio {audio_filename}, uploaded to S3: {s3_audio_url}")
+        else:
+            logger.error(f"Failed to upload audio {audio_filename} to S3")
+        
+        # Determine the sample rate (you might need to extract this from the audio file)
+        sample_rate = 16000  # Example: 16kHz
+        
+        # Stream the audio file to Amazon Transcribe
+        transcription = ""  # You would implement the transcription logic here
+        
+        return audio_filename, s3_audio_url, transcription
+    except Exception as e:
+        logger.error(f"Error processing audio message: {e}")
+        return None, None, None
+
+def upload_file_to_s3(file_path, bucket_name, object_name=None):
+    """
+    Upload a file to an S3 bucket and return its public URL.
+
+    :param file_path: File to upload
+    :param bucket_name: Bucket to upload to
+    :param object_name: S3 object name. If not specified, file_name is used
+    :return: Public URL of the uploaded file if successful, else None
+    """
+    # If S3 object_name was not specified, use file_name
+    if object_name is None:
+        object_name = os.path.basename(file_path)
+
+    try:
+        # Upload the file
+        s3_client.upload_file(file_path, bucket_name, object_name)
+        
+        # Make the object public
+        s3_client.put_object_acl(Bucket=bucket_name, Key=object_name, ACL='public-read')
+        
+        # Generate the public URL
+        public_url = f"https://{bucket_name}.s3.amazonaws.com/{object_name}"
+        return public_url
+    except ClientError as e:
+        print(f"Error uploading file to S3: {e}")
+        return None
+
 transcribe_client = boto3.client('transcribe', 
                                  region_name=os.getenv('AWS_REGION'), # AWS_REGION,
                                  aws_access_key_id=os.getenv('AWS_ACCESS_KEY'),
@@ -327,43 +388,15 @@ async def webhook(request: Request):
                 logger.info(f"{mobile} sent video {video_filename}")
                 manish.send_message(f"Video: {video_filename}", mobile)
             elif message_type == "audio":
-                try:
-                    audio = manish.get_audio(data)
-                    audio_id, mime_type = audio["id"], audio["mime_type"]
-                    audio_url = manish.query_media_url(audio_id)
-                    ogg_filename = manish.download_media(audio_url, mime_type)
-                    logger.info(f"{mobile} sent audio {ogg_filename}")
-
-                    # Convert OGG to MP3
-                    mp3_filename = await convert_ogg_to_mp3(ogg_filename)
-                    logger.info(f"Converted {ogg_filename} to MP3: {mp3_filename}")
-
-                    # Determine the sample rate (you might need to extract this from the audio file)
-                    sample_rate = 16000  # Example: 16kHz
-
-                    # Stream the MP3 file to Amazon Transcribe
-                    transcription = ""
-                    with open(mp3_filename, 'rb') as audio_file:
-                        async for event in stream_audio_to_transcribe(audio_file, sample_rate):
-                            if event and 'TranscriptEvent' in event:
-                                for result in event['TranscriptEvent']['Transcript']['Results']:
-                                    if not result['IsPartial']:
-                                        transcription += result['Alternatives'][0]['Transcript'] + " "
-
-                    # Send the transcription back to the user
+                audio_filename, s3_audio_url, transcription = process_audio_message(data, mobile, manish)
+                if audio_filename and s3_audio_url:
+                    # Process the transcription or perform other tasks
                     if transcription:
                         manish.send_message(f"Here's the transcription of your audio message:\n\n{transcription.strip()}", mobile)
                     else:
                         manish.send_message("I'm sorry, but I couldn't transcribe your audio message. It might be too short or unclear.", mobile)
-
-                    # Clean up the files
-                    os.unlink(ogg_filename)
-                    os.unlink(mp3_filename)
-
-                except Exception as e:
-                    logger.error(f"Error processing audio: {str(e)}")
-                    manish.send_message("I'm sorry, but I encountered an error while processing your audio message. Please try again later.", mobile)
- 
+                else:
+                    logger.error("Failed to process audio message")
             elif message_type == "file":
                 file = manish.get_file(data)
                 logger.info(file)
