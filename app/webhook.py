@@ -27,6 +27,9 @@ import base64
 from dotenv import load_dotenv
 import os
 import aiohttp
+import tempfile
+from pydub import AudioSegment
+
 
 load_dotenv()
 
@@ -81,6 +84,17 @@ def extract_text_from_pptx(content):
             if hasattr(shape, 'text'):
                 text += shape.text + "\n"
     return text
+
+async def convert_ogg_to_mp3(ogg_file_path):
+    # Create a temporary file for the MP3
+    with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as temp_mp3:
+        mp3_file_path = temp_mp3.name
+
+    # Convert OGG to MP3
+    audio = AudioSegment.from_ogg(ogg_file_path)
+    audio.export(mp3_file_path, format="mp3")
+
+    return mp3_file_path
 
 def generate_embedding(text):
     try:
@@ -317,21 +331,24 @@ async def webhook(request: Request):
                     audio = manish.get_audio(data)
                     audio_id, mime_type = audio["id"], audio["mime_type"]
                     audio_url = manish.query_media_url(audio_id)
-                    audio_filename = manish.download_media(audio_url, mime_type)
-                    logger.info(f"{mobile} sent audio {audio_filename}")
+                    ogg_filename = manish.download_media(audio_url, mime_type)
+                    logger.info(f"{mobile} sent audio {ogg_filename}")
+
+                    # Convert OGG to MP3
+                    mp3_filename = await convert_ogg_to_mp3(ogg_filename)
+                    logger.info(f"Converted {ogg_filename} to MP3: {mp3_filename}")
 
                     # Determine the sample rate (you might need to extract this from the audio file)
                     sample_rate = 16000  # Example: 16kHz
 
-                    # Stream the audio file to Amazon Transcribe
+                    # Stream the MP3 file to Amazon Transcribe
                     transcription = ""
-                    async with aiohttp.ClientSession() as session:
-                        async with session.get(audio_url) as audio_response:
-                            async for event in stream_audio_to_transcribe(audio_response.content, sample_rate):
-                                if event and 'TranscriptEvent' in event:
-                                    for result in event['TranscriptEvent']['Transcript']['Results']:
-                                        if not result['IsPartial']:
-                                            transcription += result['Alternatives'][0]['Transcript'] + " "
+                    with open(mp3_filename, 'rb') as audio_file:
+                        async for event in stream_audio_to_transcribe(audio_file, sample_rate):
+                            if event and 'TranscriptEvent' in event:
+                                for result in event['TranscriptEvent']['Transcript']['Results']:
+                                    if not result['IsPartial']:
+                                        transcription += result['Alternatives'][0]['Transcript'] + " "
 
                     # Send the transcription back to the user
                     if transcription:
@@ -339,12 +356,14 @@ async def webhook(request: Request):
                     else:
                         manish.send_message("I'm sorry, but I couldn't transcribe your audio message. It might be too short or unclear.", mobile)
 
-                    # Clean up the downloaded file
-                    os.unlink(audio_filename)
+                    # Clean up the files
+                    os.unlink(ogg_filename)
+                    os.unlink(mp3_filename)
 
                 except Exception as e:
                     logger.error(f"Error processing audio: {str(e)}")
                     manish.send_message("I'm sorry, but I encountered an error while processing your audio message. Please try again later.", mobile)
+ 
             elif message_type == "file":
                 file = manish.get_file(data)
                 logger.info(file)
