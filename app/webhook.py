@@ -253,7 +253,7 @@ async def webhook(request: Request):
                     messages = [
                         {
                             "role": "system",
-                            "content": f"Context: {context}\nPlease provide a concise and accurate answer to the question based on the given context. If the context doesn't contain relevant information to answer the question, please state that you don't have enough information to provide an accurate answer."
+                            "content": f"Context: {context}\nPlease provide a concise and accurate answer to the question based on the given context. If the context doesn't contain relevant information to answer the question, please state that you don't have enough information to provide an accurate answer. If the user greets , greet them back with a greeting and a pun about LaaMA Scholar whatsapp bot."
                         },
                         {
                             "role": "user",
@@ -346,7 +346,7 @@ async def webhook(request: Request):
                                 },
                                 {
                                     "type": "text",
-                                    "text": "Explain what is shown in this image from an educational point of view."
+                                    "text": "Explain what is shown in this image from an educational point of view. Try to explain in simplest terms and give tips for exams."
                                 }
                             ]
                         }
