@@ -26,6 +26,7 @@ import requests
 import base64
 from dotenv import load_dotenv
 import os
+import aiohttp
 
 load_dotenv()
 
@@ -55,6 +56,11 @@ bedrock_client = boto3.client(
     aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
     aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY')
 )
+
+transcribe_client = boto3.client('transcribe', 
+                                 region_name=os.getenv('AWS_REGION'), # AWS_REGION,
+                                 aws_access_key_id=os.getenv('AWS_ACCESS_KEY'),
+                                 aws_secret_access_key=os.getenv('AWS_SECRET_KEY'))
 
 # Other variables
 TUNE_AI_API_URL = os.getenv('TUNE_AI_API_URL')
@@ -102,6 +108,28 @@ def generate_embedding(text):
         logger.exception(f"Error generating embedding: {str(e)}")
         raise
 
+async def stream_audio_to_transcribe(audio_stream, sample_rate):
+    # Generator function to yield audio chunks
+    async def audio_stream_generator():
+        async for chunk in audio_stream.iter_any():
+            yield {'AudioEvent': {'AudioChunk': chunk}}
+
+    try:
+        # Start streaming transcription
+        response = transcribe_client.start_stream_transcription(
+            LanguageCode='en-US',
+            MediaSampleRateHertz=sample_rate,
+            MediaEncoding='pcm',
+            AudioStream=audio_stream_generator()
+        )
+
+        # Process the streaming response
+        async for event in response['TranscriptResultStream']:
+            yield event
+
+    except Exception as e:
+        print(f"Error in transcription: {str(e)}")
+        yield None
 
 
 
@@ -285,12 +313,38 @@ async def webhook(request: Request):
                 logger.info(f"{mobile} sent video {video_filename}")
                 manish.send_message(f"Video: {video_filename}", mobile)
             elif message_type == "audio":
-                audio = manish.get_audio(data)
-                audio_id, mime_type = audio["id"], audio["mime_type"]
-                audio_url = manish.query_media_url(audio_id)
-                audio_filename = manish.download_media(audio_url, mime_type)
-                logger.info(f"{mobile} sent audio {audio_filename}")
-                manish.send_message(f"Audio: {audio_filename}", mobile)
+                try:
+                    audio = manish.get_audio(data)
+                    audio_id, mime_type = audio["id"], audio["mime_type"]
+                    audio_url = manish.query_media_url(audio_id)
+                    audio_filename = manish.download_media(audio_url, mime_type)
+                    logger.info(f"{mobile} sent audio {audio_filename}")
+
+                    # Determine the sample rate (you might need to extract this from the audio file)
+                    sample_rate = 16000  # Example: 16kHz
+
+                    # Stream the audio file to Amazon Transcribe
+                    transcription = ""
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(audio_url) as audio_response:
+                            async for event in stream_audio_to_transcribe(audio_response.content, sample_rate):
+                                if event and 'TranscriptEvent' in event:
+                                    for result in event['TranscriptEvent']['Transcript']['Results']:
+                                        if not result['IsPartial']:
+                                            transcription += result['Alternatives'][0]['Transcript'] + " "
+
+                    # Send the transcription back to the user
+                    if transcription:
+                        manish.send_message(f"Here's the transcription of your audio message:\n\n{transcription.strip()}", mobile)
+                    else:
+                        manish.send_message("I'm sorry, but I couldn't transcribe your audio message. It might be too short or unclear.", mobile)
+
+                    # Clean up the downloaded file
+                    os.unlink(audio_filename)
+
+                except Exception as e:
+                    logger.error(f"Error processing audio: {str(e)}")
+                    manish.send_message("I'm sorry, but I encountered an error while processing your audio message. Please try again later.", mobile)
             elif message_type == "file":
                 file = manish.get_file(data)
                 logger.info(file)
