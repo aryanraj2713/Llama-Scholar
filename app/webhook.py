@@ -24,7 +24,10 @@ import logging
 import time
 import requests
 import base64
+from dotenv import load_dotenv
+import os
 
+load_dotenv()
 
 def encode_image(image_file):
     return base64.b64encode(image_file.read()).decode('utf-8')
@@ -37,29 +40,25 @@ logging.basicConfig(level=logging.INFO,
 logger = logging.getLogger("app")
 
 app = FastAPI()
-manish = MaNish('EAAPZCdgo11ucBO2ZCo9zVOGOGBrkot6mDeqJqWV37WKZBoxqfcKLqKJBKGq5AF0ZCtm4WMv3nYEULw5uuIgKLEZBFHZAoQQ4BzFKBZAyfWEUYk9EfAHC4DXhyl7jYzco15c7t1ZBBxAf0IoVhBOVbHuIvCD5Toep6naGVoc3JqYdWeJ1AXvTb8cQzJT80ZB5ZCQ1xZBPgC9l897fi5ODfDRF1H88q1hoIsQ',  phone_number_id='436207996245933')
+manish = MaNish(os.getenv('FACEBOOK_ACCESS_TOKEN'), phone_number_id=os.getenv('PHONE_NUMBER_ID'))
 
-#secrets
-aws_access_key_id = "AKIAQ3EGUNCQ5QJVNYMJ"
-aws_secret_access_key = "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"
-aws_region = "us-west-2"
-
-TUNE_AI_API_URL = "https://proxy.tune.app/chat/completions"
-TUNE_AI_API_KEY = "sk-tune-IeArLOH0xZIE5cTHuNzrVGQlATFTMNDZqzh" 
-
-# clients
+# Initialize Qdrant client
 qdrant_client = QdrantClient(
-    url="https://13f743e4-bf99-4752-a59a-fb717c1b8d52.us-east4-0.gcp.cloud.qdrant.io:6333", 
-    api_key="16WN21MOBd-WI1JNKD7KTQ8Pn378xUv9PY4MzQQiwGNPf3ZUf3gZhg",
+    url=os.getenv('QDRANT_URL'),
+    api_key=os.getenv('QDRANT_API_KEY'),
 )
 
-
+# Initialize AWS Bedrock client
 bedrock_client = boto3.client(
     service_name="bedrock-runtime",
-    region_name=aws_region,
-    aws_access_key_id=aws_access_key_id,
-    aws_secret_access_key=aws_secret_access_key
+    region_name=os.getenv('AWS_REGION'),
+    aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
+    aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY')
 )
+
+# Other variables
+TUNE_AI_API_URL = os.getenv('TUNE_AI_API_URL')
+TUNE_AI_API_KEY = os.getenv('TUNE_AI_API_KEY')
 
 def extract_text_from_pdf(content):
     pdf_reader = PyPDF2.PdfReader(io.BytesIO(content))
